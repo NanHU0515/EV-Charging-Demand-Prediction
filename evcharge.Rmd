@@ -1,0 +1,111 @@
+---
+title: "evcharge"
+output: html_document
+date: "2026-07-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+```
+
+# Read the data
+
+```{r}
+ev_df <- read_csv("data/Electric_Vehicle_Charging_Station_Data.csv")
+ev_df <- clean_names(ev_df)
+```
+
+```{r}
+stations_locations_class <- read_csv("data/stations.csv")
+```
+
+```{r}
+ev_df <- ev_df %>% 
+  left_join(
+    stations_locations_class %>% 
+      select(station_name, osm_class, osm_type), 
+    by = "station_name"
+  )
+```
+
+```{r}
+rm(stations_locations_class)
+```
+
+```{r}
+ev_df <- ev_df %>% select(
+  everything(),
+  -c(
+    address,
+    city,
+    state_province,
+    zip_postal_code,
+    start_time_zone,
+    end_time_zone,
+    total_duration_hh_mm_ss,
+    port_type,
+    object_id,
+    object_id2
+  )
+)
+```
+
+```{r}
+ev_df <- ev_df %>%
+  mutate(station_code = as.integer(factor(station_name)),
+         start_date_time = coalesce(mdy_hm(start_date_time), ymd_hms(start_date_time)),
+         end_date_time = coalesce(mdy_hm(end_date_time), ymd_hms(end_date_time)),
+         charging_time_h = as.numeric(charging_time_hh_mm_ss) / 3600) %>%
+  select(station_code, everything(), -station_name, -charging_time_hh_mm_ss)
+```
+
+
+```{r}
+ev_df_grouped_by_day <- ev_df %>%
+  group_by(station_code, start_date = date(start_date_time)) %>%
+  summarise(usage_time = sum(charging_time_h),
+            energy_k_wh = sum(energy_k_wh),
+            osm_class = first(osm_class),
+            osm_type = first(osm_type)) %>%
+  ungroup() %>%
+  group_by(station_code, osm_class, osm_type) %>%
+  complete(
+    start_date = seq(date(min(
+      ev_df$start_date_time
+    )), date(max(
+      ev_df$start_date_time
+    )), by = 1),
+    fill = list(usage_time = 0, energy_k_wh = 0)
+  ) %>%
+  ungroup()
+```
+
+```{r}
+ev_df_grouped_by_week <- ev_df_grouped_by_day %>% 
+  mutate(week = year(start_date) + (week(start_date)-1)/52) %>%
+  group_by(station_code, week) %>%
+  summarise(usage_time = sum(usage_time),
+            energy_k_wh = sum(energy_k_wh),
+            osm_class = first(osm_class),
+            osm_type = first(osm_type)) %>%
+  ungroup()
+```
+
+
+```{r}
+
+plotf <- \(df) df %>% ggplot(aes(x = week, y = energy_k_wh, group = station_code)) +
+  geom_line() +
+  theme_bw() +
+  labs(title = str_c("Weekly energy consumption for station ", first(df$station_code)),
+       subtitle = str_c("Class ", first(df$osm_class), ", Type ", first(df$osm_type)))
+
+
+lapply(ev_df_grouped_by_week %>% group_split(station_code), plotf)
+
+```
+
+
+
