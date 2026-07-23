@@ -83,6 +83,23 @@ ev_df_grouped_by_day <- ev_df %>%
 ```
 
 ```{r}
+
+plotf2 <- \(df) df %>% ggplot(aes(x = start_date, y = energy_k_wh, group = station_code)) +
+  geom_line() +
+  theme_bw() +
+  labs(title = str_c("Daily energy consumption for station ", first(df$station_code)),
+       subtitle = str_c("Class ", first(df$osm_class), ", Type ", first(df$osm_type)))
+
+
+lapply(ev_df_grouped_by_day %>% 
+         filter(station_code %in% working_stations) %>%
+         # slice_tail(n = 30) %>%
+         group_split(station_code), plotf2)
+
+```
+
+
+```{r}
 ev_df_grouped_by_week <- ev_df_grouped_by_day %>% 
   mutate(week = year(start_date) + (week(start_date)-1)/52) %>%
   group_by(station_code, week) %>%
@@ -103,9 +120,93 @@ plotf <- \(df) df %>% ggplot(aes(x = week, y = energy_k_wh, group = station_code
        subtitle = str_c("Class ", first(df$osm_class), ", Type ", first(df$osm_type)))
 
 
-lapply(ev_df_grouped_by_week %>% group_split(station_code), plotf)
+lapply(ev_df_grouped_by_week %>% filter(station_code %in% working_stations) %>% group_split(station_code), plotf)
 
 ```
 
+```{r}
+ev_df %>% 
+  filter(station_code %in% working_stations) %>%
+  select(station_code, osm_class, osm_type) %>% unique() %>% group_by(osm_class, osm_type) %>% count()
+```
 
+
+```{r}
+ev_df_grouped_by_week %>% 
+  filter(station_code %in% working_stations) %>%
+  ggplot(aes(x = week, y = energy_k_wh, group = station_code, color = factor(station_code))) +
+  geom_line() +
+  theme_bw() +
+  facet_wrap(~ osm_class, scales = "free_y") +
+  theme(legend.position = "none")
+  
+```
+
+# Slide 1 - Present the problem (growth in EV) and question
+# Slide 2 - Finding the data (ACN, Boulder)
+# Slide 3 - Insights from the data
+# Slide 4 - Insights from the data
+# Slide 5 - Modeling
+# Slide 6 - Modeling
+# Slide 7 - Modeling
+
+
+```{r}
+ev_df_grouped_by_weekday <- ev_df_grouped_by_day %>% 
+  mutate(weekday = wday(start_date)) %>%
+  group_by(station_code, weekday) %>%
+  summarise(energy_k_wh = sum(energy_k_wh),
+            osm_class = first(osm_class),
+            osm_type = first(osm_type)) %>%
+  ungroup()
+```
+
+
+```{r}
+ev_df_grouped_by_weekday %>% 
+  filter(station_code %in% working_stations) %>%
+  group_by(station_code) %>%
+  mutate(energy_k_wh = (energy_k_wh - mean(energy_k_wh))/sd(energy_k_wh)) %>%
+  ggplot(aes(x = factor(weekday), y = energy_k_wh, group = station_code, color = factor(station_code))) +
+  geom_line() +
+  theme_bw() +
+  facet_wrap(~ osm_class, scales = "free_y") +
+  theme(legend.position = "none")
+```
+
+```{r}
+ev_df_grouped_by_hour <- ev_df %>% 
+  mutate(hour = hour(start_date_time)) %>%
+  group_by(station_code, hour) %>%
+  summarise(energy_k_wh = sum(energy_k_wh),
+            osm_class = first(osm_class),
+            osm_type = first(osm_type)) %>%
+  ungroup()
+```
+
+```{r}
+plotf3 <- \(df) df %>% ggplot(aes(x = hour, y = energy_k_wh, group = station_code)) +
+  geom_line() +
+  theme_bw() +
+  labs(title = str_c("Hourly energy consumption for station ", first(df$station_code)),
+       subtitle = str_c("Class ", first(df$osm_class), ", Type ", first(df$osm_type)))
+
+
+lapply(ev_df_grouped_by_hour %>% filter(station_code %in% working_stations) %>% group_split(station_code), plotf3)
+```
+
+```{r}
+ev_df %>% group_by(station_code) %>% count() %>% arrange(-n) %>% summary()
+```
+```{r}
+working_stations <- ev_df %>% group_by(station_code) %>% count() %>% filter(n > 3000) %>% pull(station_code)
+```
+
+```{r}
+ev_df %>%
+  filter(station_code %in% working_stations, energy_k_wh > 0) %>%
+  group_by(station_code, y = year(start_date_time)) %>%
+  count() %>%
+  pivot_wider(id_cols = station_code, names_from = "y", values_from = "n")
+```
 
